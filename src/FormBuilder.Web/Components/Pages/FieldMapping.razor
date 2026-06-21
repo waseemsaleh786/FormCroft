@@ -1,0 +1,246 @@
+@page "/forms/{FormId:guid}/mapping"
+@using FormBuilder.Application.Features.Mappings
+@using FormBuilder.Application.Features.Metadata
+@using FormBuilder.Application.Features.Forms.Queries
+@inject ISender Sender
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Field Mapping — FormCraft</PageTitle>
+
+@if (_loading)
+{
+    <div class="map-loading"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></div>
+}
+else
+{
+    <div class="mapper">
+        <div class="form-nav">
+            <div class="breadcrumb">
+                <a href="/">Forms</a><span class="sep">›</span>
+                <a href="@($"/forms/{FormId}/designer")">@_formName</a><span class="sep">›</span><span>Field Mapping</span>
+            </div>
+            <div class="form-actions">
+                <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync">Refresh</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
+                           Disabled="_saving" OnClick="SaveAsync">Save Mappings</MudButton>
+            </div>
+        </div>
+
+        <div class="map-workspace">
+            <!-- LEFT: form fields -->
+            <aside class="map-panel">
+                <div class="map-panel-header">Form Fields</div>
+                <div class="map-search"><input class="map-search-input" placeholder="Search fields..." @bind="_fieldSearch" @bind:event="oninput" /></div>
+                <div class="map-list">
+                    @foreach (var f in FilteredFields)
+                    {
+                        var field = f;
+                        var mapped = _mappings.Any(m => m.FormFieldId == field.Id);
+                        <div class="map-item form-field @(_activeField?.Id == field.Id ? "active" : "") @(mapped ? "mapped" : "")"
+                             draggable="true" @ondragstart="() => _dragField = field"
+                             @onclick="() => SelectField(field)">
+                            <span class="map-dot green"></span>
+                            <div class="map-item-body">
+                                <div class="map-item-name">@(string.IsNullOrWhiteSpace(field.Label) ? field.Name : field.Label)</div>
+                                <div class="map-item-meta">@field.Type @(mapped ? "• mapped" : "")</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </aside>
+
+            <!-- CENTER: mapping canvas / summary -->
+            <main class="map-canvas">
+                <div class="map-canvas-head">
+                    <div>
+                        <div class="map-canvas-title">Mappings</div>
+                        <div class="map-canvas-sub">@_mappings.Count mapping@(_mappings.Count == 1 ? "" : "s") · @_fields.Count field@(_fields.Count == 1 ? "" : "s")</div>
+                    </div>
+                    @if (_activeField is not null)
+                    {
+                        <div class="map-hint">Now click a column on the right to map <b>@(_activeField.Label)</b></div>
+                    }
+                </div>
+
+                @if (_mappings.Count == 0)
+                {
+                    <div class="map-empty">
+                        <div class="map-empty-icon">🔗</div>
+                        <div>No mappings yet.</div>
+                        <div class="map-empty-sub">Select a form field, then click a database column — or drag a field onto a column.</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="map-rows">
+                        @foreach (var m in _mappings)
+                        {
+                            var map = m;
+                            <div class="map-row">
+                                <div class="map-node form">@map.FormFieldLabel</div>
+                                <svg class="map-connector" viewBox="0 0 100 24" preserveAspectRatio="none">
+                                    <path d="M0,12 C40,12 60,12 100,12" stroke="#CBEC00" stroke-width="2" fill="none" />
+                                    <circle cx="0" cy="12" r="3" fill="#CBEC00" />
+                                    <circle cx="100" cy="12" r="3" fill="#3B82F6" />
+                                </svg>
+                                <div class="map-node db">@map.TableName<span class="col">.@map.ColumnName</span></div>
+                                <button class="map-row-del" title="Remove" @onclick="() => RemoveMapping(map)">✕</button>
+                            </div>
+                        }
+                    </div>
+                }
+            </main>
+
+            <!-- RIGHT: database tables/columns -->
+            <aside class="map-panel right">
+                <div class="map-panel-header">Database</div>
+                <div class="map-search">
+                    <select class="map-search-input" @bind="_selectedTable" @bind:after="LoadColumnsAsync">
+                        <option value="">— Select table —</option>
+                        @foreach (var t in _tables)
+                        {
+                            <option value="@t.FullName">@t.FullName</option>
+                        }
+                    </select>
+                </div>
+                @if (!string.IsNullOrEmpty(_selectedTable))
+                {
+                    <div class="map-search"><input class="map-search-input" placeholder="Search columns..." @bind="_columnSearch" @bind:event="oninput" /></div>
+                    <div class="map-list">
+                        @foreach (var c in FilteredColumns)
+                        {
+                            var col = c;
+                            <div class="map-item db-field" @ondragover:preventDefault="true"
+                                 @ondrop="() => OnDropColumn(col.Name)" @onclick="() => OnClickColumn(col.Name)">
+                                <span class="map-dot blue"></span>
+                                <div class="map-item-body">
+                                    <div class="map-item-name">@col.Name @if (col.IsPrimaryKey) { <span class="pk">PK</span> }</div>
+                                    <div class="map-item-meta">@col.DataType @(col.IsNullable ? "• null" : "")</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="map-placeholder">Select a table to see its columns.</div>
+                }
+            </aside>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid FormId { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private string _formName = "";
+
+    private List<MappableFieldDto> _fields = new();
+    private List<DatabaseTableDto> _tables = new();
+    private List<DatabaseColumnDto> _columns = new();
+    private readonly List<FieldMappingDto> _mappings = new();
+
+    private string _fieldSearch = "";
+    private string _columnSearch = "";
+    private string _selectedTable = "";
+
+    private MappableFieldDto? _activeField;
+    private MappableFieldDto? _dragField;
+
+    private IEnumerable<MappableFieldDto> FilteredFields =>
+        string.IsNullOrWhiteSpace(_fieldSearch)
+            ? _fields
+            : _fields.Where(f => (f.Label + f.Name).Contains(_fieldSearch, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<DatabaseColumnDto> FilteredColumns =>
+        string.IsNullOrWhiteSpace(_columnSearch)
+            ? _columns
+            : _columns.Where(c => c.Name.Contains(_columnSearch, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var form = await Sender.Send(new GetFormByIdQuery(FormId));
+        _formName = form.Name;
+        await ReloadAsync();
+        _tables = (await Sender.Send(new GetTablesQuery())).ToList();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+    {
+        _fields = (await Sender.Send(new GetMappableFieldsQuery(FormId))).ToList();
+        _mappings.Clear();
+        _mappings.AddRange(await Sender.Send(new GetFieldMappingsQuery(FormId)));
+    }
+
+    private async Task LoadColumnsAsync()
+    {
+        _columnSearch = "";
+        _columns = string.IsNullOrEmpty(_selectedTable)
+            ? new()
+            : (await Sender.Send(new GetColumnsQuery(_selectedTable))).ToList();
+    }
+
+    private void SelectField(MappableFieldDto field)
+        => _activeField = _activeField?.Id == field.Id ? null : field;
+
+    private void OnClickColumn(string columnName)
+    {
+        if (_activeField is null)
+        {
+            Snackbar.Add("Select a form field first.", Severity.Info);
+            return;
+        }
+        AddMapping(_activeField, columnName);
+        _activeField = null;
+    }
+
+    private void OnDropColumn(string columnName)
+    {
+        if (_dragField is null) return;
+        AddMapping(_dragField, columnName);
+        _dragField = null;
+    }
+
+    private void AddMapping(MappableFieldDto field, string columnName)
+    {
+        if (string.IsNullOrEmpty(_selectedTable)) { Snackbar.Add("Select a table first.", Severity.Warning); return; }
+        if (_mappings.Any(m => m.FormFieldId == field.Id))
+        {
+            Snackbar.Add($"'{field.Label}' is already mapped. Remove it first.", Severity.Warning);
+            return;
+        }
+        _mappings.Add(new FieldMappingDto
+        {
+            FormId = FormId,
+            FormFieldId = field.Id,
+            FormFieldLabel = string.IsNullOrWhiteSpace(field.Label) ? field.Name : field.Label,
+            TableName = _selectedTable,
+            ColumnName = columnName
+        });
+        Snackbar.Add($"Mapped {field.Label} → {_selectedTable}.{columnName}", Severity.Success);
+    }
+
+    private void RemoveMapping(FieldMappingDto m) => _mappings.Remove(m);
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var items = _mappings
+                .Select(m => new MappingItem(m.FormFieldId, m.TableName, m.ColumnName))
+                .ToList();
+            await Sender.Send(new SaveFieldMappingsCommand(FormId, items));
+            Snackbar.Add("Mappings saved", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally { _saving = false; }
+    }
+}

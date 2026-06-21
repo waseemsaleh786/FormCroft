@@ -1,0 +1,320 @@
+@page "/forms/{FormId:guid}/designer"
+@using FormBuilder.Application.Features.Designer.Commands
+@using FormBuilder.Application.Features.Designer.Queries
+@using FormBuilder.Web.Models.Designer
+@using FormBuilder.Web.Services
+@implements IDisposable
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject CanvasStateService Canvas
+@inject DragDropStateService Drag
+@inject LayoutDesignerService Layout
+
+<PageTitle>@(Canvas.Form?.Name ?? "Designer") — FormCraft</PageTitle>
+
+@if (_loading)
+{
+    <div class="dz-loading"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></div>
+}
+else if (Canvas.Form is null)
+{
+    <div class="dz-loading">Form not found.</div>
+}
+else
+{
+    var form = Canvas.Form;
+    var page = Canvas.Page!;
+    <div class="designer @(_previewMode ? "preview" : "")">
+        <!-- Form nav -->
+        <div class="form-nav">
+            <div class="breadcrumb"><a href="/">Forms</a><span class="sep">›</span><span>@form.Name</span></div>
+            <div class="form-title-wrap">
+                <input class="form-title" @bind="form.Name" @bind:event="oninput" @bind:after="Canvas.MarkDirty" spellcheck="false" />
+                @if (Canvas.Dirty) { <span class="unsaved-dot" title="Unsaved changes"></span> }
+            </div>
+            <div class="form-actions">
+                @if (form.Status == FormStatus.Published)
+                {
+                    <span class="status-pill published">Published (read-only)</span>
+                    <MudButton Size="Size.Small" OnClick="RevertToDraft">Edit</MudButton>
+                }
+                <MudButton Size="Size.Small" OnClick="TogglePreview">@(_previewMode ? "Exit Preview" : "Preview")</MudButton>
+                <MudButton Size="Size.Small" Disabled="@(!Canvas.Dirty || _saving)" OnClick="Save">Save</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" OnClick="Publish">Publish</MudButton>
+            </div>
+        </div>
+
+        <div class="workspace">
+            <!-- LEFT: pages -->
+            <aside class="left-panel">
+                <div class="panel-header">Pages</div>
+                <div class="pages-list">
+                    @for (var i = 0; i < form.Pages.Count; i++)
+                    {
+                        var idx = i;
+                        var p = form.Pages[idx];
+                        <div class="page-item @(idx == Canvas.ActivePage ? "active" : "")" @onclick="() => Canvas.SetActivePage(idx)">
+                            <div class="page-number">@(idx + 1)</div>
+                            <div class="page-info">
+                                <div class="page-name">@(p.Name)</div>
+                                <div class="page-field-count">@Canvas.PageFieldCount(p) field@(Canvas.PageFieldCount(p) == 1 ? "" : "s")</div>
+                            </div>
+                            <div class="page-actions" @onclick:stopPropagation="true">
+                                <button class="page-action-btn" title="Rename" @onclick="() => RenamePage(idx)">✎</button>
+                                <button class="page-action-btn delete" title="Delete" @onclick="() => DeletePage(idx)">✕</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <button class="add-page-btn" @onclick="AddPage">+ Add Page</button>
+            </aside>
+
+            <!-- CENTER: canvas -->
+            <main class="center-canvas">
+                <div class="form-container @(Canvas.LayoutMode ? "layout-mode" : "")">
+                    @if (_previewMode)
+                    {
+                        <h2 class="preview-title">@form.Name</h2>
+                        @if (!string.IsNullOrWhiteSpace(form.Description)) { <p class="preview-desc">@form.Description</p> }
+                        @foreach (var row in page.Rows)
+                        {
+                            <CanvasRow Row="row" ParentRows="page.Rows" RowIndex="page.Rows.IndexOf(row)" Depth="0" Preview="true" />
+                        }
+                    }
+                    else if (page.Rows.Count == 0)
+                    {
+                        <div class="empty-canvas @(Drag.OverTargetId == "empty" ? "drag-over" : "")"
+                             @ondragenter:preventDefault="true" @ondragenter='() => Drag.SetOver("empty")'
+                             @ondragleave='() => Drag.ClearOver("empty")'
+                             @ondragover:preventDefault="true"
+                             @ondrop:preventDefault="true" @ondrop="() => Canvas.DropOnZone(page.Rows, 0)">
+                            <div class="empty-canvas-icon">🧩</div>
+                            <div class="empty-canvas-text">Drag a layout here</div>
+                            <div class="empty-canvas-sub">Drag a layout template from the Layout tab to add your first row.</div>
+                        </div>
+                    }
+                    else
+                    {
+                        @for (var r = 0; r <= page.Rows.Count; r++)
+                        {
+                            var zoneIndex = r;
+                            var zoneId = ZoneId(zoneIndex);
+                            var zoneActive = Drag.OverTargetId == zoneId && Drag.Current is LayoutDrag or RowMoveDrag;
+                            <div class="row-drop-zone @(zoneActive ? "active" : "")"
+                                 @ondragenter:preventDefault="true" @ondragenter="() => Drag.SetOver(zoneId)"
+                                 @ondragleave="() => Drag.ClearOver(zoneId)"
+                                 @ondragover:preventDefault="true"
+                                 @ondrop:preventDefault="true" @ondrop="() => Canvas.DropOnZone(page.Rows, zoneIndex)">
+                                @if (zoneActive) { <span>Drop here</span> }
+                            </div>
+                            @if (zoneIndex < page.Rows.Count)
+                            {
+                                var row = page.Rows[zoneIndex];
+                                <CanvasRow Row="row" ParentRows="page.Rows" RowIndex="zoneIndex" Depth="0" />
+                            }
+                        }
+                    }
+                </div>
+            </main>
+
+            <!-- RIGHT: toolbox -->
+            <aside class="right-panel">
+                <div class="right-tabs">
+                    <button class="right-tab @(_rightTab == "fields" ? "active" : "")" @onclick='() => SetRightTab("fields")'>Fields</button>
+                    <button class="right-tab @(_rightTab == "layout" ? "active" : "")" @onclick='() => SetRightTab("layout")'>Layout</button>
+                </div>
+                <div class="right-content">
+                    @if (_rightTab == "fields")
+                    {
+                        <div class="layout-subtitle">Drag a field onto a placeholder. Click only selects.</div>
+                        @foreach (var group in Layout.FieldGroups)
+                        {
+                            <div class="field-group-header">@group</div>
+                            <div class="field-group-items">
+                                @foreach (var info in Layout.FieldTypes.Where(f => f.Group == group))
+                                {
+                                    var fi = info;
+                                    <div class="field-item @(_selectedFieldType == fi.Type ? "selected" : "")" draggable="true"
+                                         @ondragstart="() => Drag.Start(new NewFieldDrag(fi.Type))"
+                                         @ondragend="() => Drag.End()"
+                                         @onclick="() => _selectedFieldType = fi.Type">
+                                        <span class="field-item-icon">@fi.Icon</span>
+                                        <span class="field-item-name">@fi.Label</span>
+                                        <span class="field-item-drag">⋮⋮</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="layout-subtitle">Drag a layout onto the canvas. Click only selects.</div>
+                        @foreach (var template in Layout.Templates)
+                        {
+                            var t = template;
+                            <div class="placeholder-card @(_selectedLayoutId == t.Id ? "selected" : "")" draggable="true"
+                                 @ondragstart="() => Drag.Start(new LayoutDrag(t))"
+                                 @ondragend="() => Drag.End()"
+                                 @onclick="() => _selectedLayoutId = t.Id">
+                                <div class="placeholder-card-type">@t.Label</div>
+                                <div class="placeholder-card-desc">@t.Description</div>
+                                <div class="placeholder-card-visual">
+                                    @foreach (var w in t.Columns)
+                                    {
+                                        <div class="placeholder-card-col" style="flex:@w">@(Math.Round(w / 12.0 * 100))%</div>
+                                    }
+                                </div>
+                                <div class="placeholder-card-hint">Drag to canvas →</div>
+                            </div>
+                        }
+                    }
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    @if (Canvas.Selected is not null && !Canvas.LayoutMode)
+    {
+        <FieldConfigDrawer Field="Canvas.Selected" OnChanged="Canvas.MarkDirty"
+                           OnClose="Canvas.ClearSelection" OnDelete="DeleteSelected"
+                           OtherFieldNames="OtherFieldNames" />
+    }
+}
+
+@code {
+    [Parameter] public Guid FormId { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private bool _previewMode;
+    private string _rightTab = "fields";
+    private FieldType? _selectedFieldType;
+    private string? _selectedLayoutId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Canvas.Changed += OnStateChanged;
+        Drag.Changed += OnStateChanged;
+        var dto = await Sender.Send(new GetFormDesignerQuery(FormId));
+        Canvas.Load(DesignerMapper.ToModel(dto));
+        Canvas.SetLayoutMode(false);
+        _loading = false;
+    }
+
+    private void OnStateChanged()
+    {
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await Task.Yield(); // Ensure UI thread processes
+        });
+    }
+
+    private static string ZoneId(int index) => $"zone-{index}";
+
+    private void SetRightTab(string tab)
+    {
+        _rightTab = tab;
+        Canvas.SetLayoutMode(tab == "layout");
+    }
+
+    private IEnumerable<string> OtherFieldNames =>
+        Canvas.AllFields().Where(f => f != Canvas.Selected).Select(f => f.Name);
+
+    // ---- Pages ----
+    private async Task AddPage()
+    {
+        var name = await PromptAsync("Page name", "Create", $"Page {Canvas.Form!.Pages.Count + 1}");
+        if (name is null) return;
+        Canvas.Form.Pages.Add(new DesignerPage { Name = name });
+        Canvas.SetActivePage(Canvas.Form.Pages.Count - 1);
+        Canvas.MarkDirty();
+    }
+
+    private async Task RenamePage(int idx)
+    {
+        var name = await PromptAsync("Page name", "Rename", Canvas.Form!.Pages[idx].Name);
+        if (name is null) return;
+        Canvas.Form.Pages[idx].Name = name;
+        Canvas.MarkDirty();
+    }
+
+    private void DeletePage(int idx)
+    {
+        if (Canvas.Form!.Pages.Count == 1) { Snackbar.Add("A form must have at least one page.", Severity.Warning); return; }
+        Canvas.Form.Pages.RemoveAt(idx);
+        Canvas.SetActivePage(Math.Min(Canvas.ActivePage, Canvas.Form.Pages.Count - 1));
+        Canvas.MarkDirty();
+    }
+
+    private void DeleteSelected()
+    {
+        var field = Canvas.Selected;
+        if (field is null) return;
+        foreach (var col in AllColumns(Canvas.Page!))
+            if (col.Fields.Remove(field)) { Canvas.MarkDirty(); break; }
+        Canvas.ClearSelection();
+    }
+
+    private static IEnumerable<DesignerColumn> AllColumns(DesignerPage page)
+        => page.Rows.SelectMany(AllColumns);
+    private static IEnumerable<DesignerColumn> AllColumns(DesignerRow row)
+        => row.Columns.Concat(row.Columns.SelectMany(c => c.SubRows.SelectMany(AllColumns)));
+
+    // ---- Toolbar ----
+    private void TogglePreview() { _previewMode = !_previewMode; Canvas.ClearSelection(); }
+
+    private async Task Save()
+    {
+        if (Canvas.Form is null) return;
+        _saving = true;
+        try
+        {
+            await Sender.Send(new SaveFormDesignerCommand(DesignerMapper.ToDto(Canvas.Form)));
+            Canvas.ClearDirty();
+            Snackbar.Add("Form saved", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _saving = false; }
+    }
+
+    private async Task Publish()
+    {
+        if (Canvas.Form is null) return;
+        if (Canvas.Dirty) await Save();
+        try
+        {
+            await Sender.Send(new FormBuilder.Application.Features.Forms.Commands.PublishFormCommand(Canvas.Form.Id));
+            Canvas.Form.Status = FormStatus.Published;
+            Snackbar.Add("Form published", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task RevertToDraft()
+    {
+        if (Canvas.Form is null) return;
+        await Sender.Send(new FormBuilder.Application.Features.Forms.Commands.RevertToDraftCommand(Canvas.Form.Id));
+        Canvas.Form.Status = FormStatus.Draft;
+        Snackbar.Add("Reverted to draft", Severity.Normal);
+    }
+
+    private async Task<string?> PromptAsync(string label, string okText, string? initial)
+    {
+        var parameters = new DialogParameters<PromptDialog>
+        {
+            { x => x.Label, label }, { x => x.OkText, okText }, { x => x.InitialValue, initial }
+        };
+        var dialog = await DialogService.ShowAsync<PromptDialog>(label, parameters);
+        var result = await dialog.Result;
+        return result is { Canceled: false, Data: string s } ? s : null;
+    }
+
+    public void Dispose()
+    {
+        Canvas.Changed -= OnStateChanged;
+        Drag.Changed -= OnStateChanged;
+    }
+}

@@ -1,0 +1,100 @@
+@page "/f/{Slug}"
+@using FormBuilder.Web.Models.Designer
+@using FormBuilder.Application.Features.Designer.Queries
+@using FormBuilder.Application.Features.Submissions
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_form?.Name ?? "Form")</PageTitle>
+
+<div class="runtime-wrap">
+    @if (_loading)
+    {
+        <div class="rt-center"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></div>
+    }
+    else if (_form is null)
+    {
+        <div class="rt-card rt-center">
+            <h2>Form not available</h2>
+            <p>This form does not exist or has not been published.</p>
+        </div>
+    }
+    else if (_submitted)
+    {
+        <div class="rt-card rt-center">
+            <div class="rt-success-icon">✓</div>
+            <h2>Thank you!</h2>
+            <p>Your response has been recorded.</p>
+        </div>
+    }
+    else
+    {
+        <div class="rt-card">
+            <h1 class="rt-title">@_form.Name</h1>
+            @if (!string.IsNullOrWhiteSpace(_form.Description)) { <p class="rt-desc">@_form.Description</p> }
+
+            <EditForm Model="_values" OnValidSubmit="SubmitAsync">
+                @foreach (var page in _form.Pages)
+                {
+                    @if (_form.Pages.Count > 1) { <h3 class="rt-page">@(page.Name)</h3> }
+                    @foreach (var row in page.Rows)
+                    {
+                        <div class="rt-row">
+                            @foreach (var col in row.Columns)
+                            {
+                                <div class="rt-col" style="grid-column: span @col.Width;">
+                                    @foreach (var field in col.Fields)
+                                    {
+                                        var f = field;
+                                        <FieldRenderer Field="f" Interactive="true"
+                                                       Value="@GetValue(f.Id)"
+                                                       ValueChanged="v => SetValue(f.Id, v)" />
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                <div class="rt-actions">
+                    <button type="submit" class="fr-button" disabled="@_busy">Submit</button>
+                </div>
+            </EditForm>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+
+    private DesignerForm? _form;
+    private bool _loading = true;
+    private bool _submitted;
+    private bool _busy;
+    private readonly Dictionary<Guid, string?> _values = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var dto = await Sender.Send(new GetPublishedFormQuery(Slug));
+        _form = dto is null ? null : DesignerMapper.ToModel(dto);
+        _loading = false;
+    }
+
+    private string? GetValue(Guid id) => _values.TryGetValue(id, out var v) ? v : null;
+    private void SetValue(Guid id, string? value) => _values[id] = value;
+
+    private async Task SubmitAsync()
+    {
+        if (_form is null) return;
+        _busy = true;
+        try
+        {
+            await Sender.Send(new SubmitFormCommand(Slug, _values));
+            _submitted = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+}

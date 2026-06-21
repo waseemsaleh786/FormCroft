@@ -1,0 +1,15 @@
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(Layout.MainLayout)">
+            <div style="padding:60px;text-align:center;color:#5A5A5A">
+                <h2 style="color:#2A2A2A">Page not found</h2>
+                <p>The page you're looking for doesn't exist.</p>
+                <a href="/" style="color:#2A2A2A;font-weight:600">← Back to Forms</a>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

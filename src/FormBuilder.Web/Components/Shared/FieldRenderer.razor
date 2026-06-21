@@ -1,0 +1,140 @@
+@using FormBuilder.Web.Models.Designer
+
+@if (Field.Type == FieldType.Divider)
+{
+    <hr class="fr-divider" />
+}
+else if (Field.Type == FieldType.Heading)
+{
+    <h3 class="fr-heading">@DisplayLabel</h3>
+}
+else if (Field.Type == FieldType.Paragraph)
+{
+    <p class="fr-paragraph">@(string.IsNullOrWhiteSpace(Field.HelpText) ? DisplayLabel : Field.HelpText)</p>
+}
+else if (Field.Type == FieldType.Button)
+{
+    <button type="button" class="fr-button" disabled="@(!Interactive)">@(string.IsNullOrWhiteSpace(Field.Label) ? "Button" : Field.Label)</button>
+}
+else
+{
+    <div class="fr-field @Field.CssClass" title="@Field.Tooltip">
+        @if (!Field.HideLabel)
+        {
+            <label class="fr-label">@DisplayLabel @if (Field.Required) { <span class="fr-required">*</span> }</label>
+        }
+
+        @switch (Field.Type)
+        {
+            case FieldType.Textarea:
+                <textarea class="fr-input" rows="3" placeholder="@Field.Placeholder" disabled="@(!Interactive)"
+                          value="@Value" @onchange="OnChange"></textarea>
+                break;
+
+            case FieldType.Dropdown:
+                <select class="fr-input" disabled="@(!Interactive)" value="@Value" @onchange="OnChange">
+                    <option value="">@(Field.Placeholder ?? "Select an option...")</option>
+                    @foreach (var opt in EffectiveOptions)
+                    {
+                        <option value="@opt">@opt</option>
+                    }
+                </select>
+                break;
+
+            case FieldType.MultiSelect:
+                <select class="fr-input" multiple disabled="@(!Interactive)" @onchange="OnChange">
+                    @foreach (var opt in EffectiveOptions)
+                    {
+                        <option value="@opt">@opt</option>
+                    }
+                </select>
+                break;
+
+            case FieldType.Radio:
+                <div class="fr-options">
+                    @foreach (var opt in EffectiveOptions)
+                    {
+                        <label class="fr-option">
+                            <input type="radio" name="@($"radio_{Field.Id}")" value="@opt"
+                                   checked="@(Value == opt)" disabled="@(!Interactive)"
+                                   @onchange="@(() => OnValue(opt))" />
+                            <span>@opt</span>
+                        </label>
+                    }
+                </div>
+                break;
+
+            case FieldType.Checkbox:
+                <label class="fr-option">
+                    <input type="checkbox" checked="@(Value == "true")" disabled="@(!Interactive)"
+                           @onchange="OnCheckbox" />
+                    <span>@(Field.Placeholder ?? "Yes")</span>
+                </label>
+                break;
+
+            case FieldType.FileUpload:
+                <input type="file" class="fr-input" disabled="@(!Interactive)" />
+                break;
+
+            case FieldType.Date:
+                <input type="date" class="fr-input" disabled="@(!Interactive)" value="@Value" @onchange="OnChange" />
+                break;
+
+            case FieldType.DateTime:
+                <input type="datetime-local" class="fr-input" disabled="@(!Interactive)" value="@Value" @onchange="OnChange" />
+                break;
+
+            case FieldType.Number:
+                <input type="number" class="fr-input" placeholder="@Field.Placeholder" disabled="@(!Interactive)"
+                       value="@Value" @onchange="OnChange" />
+                break;
+
+            case FieldType.Email:
+                <input type="email" class="fr-input" placeholder="@(Field.Placeholder ?? "you@example.com")"
+                       disabled="@(!Interactive)" value="@Value" @onchange="OnChange" />
+                break;
+
+            case FieldType.Phone:
+                <input type="tel" class="fr-input" placeholder="@(Field.Placeholder ?? "+1 (555) 000-0000")"
+                       disabled="@(!Interactive)" value="@Value" @onchange="OnChange" />
+                break;
+
+            case FieldType.Password:
+                <input type="password" class="fr-input" placeholder="@(Field.Placeholder ?? "••••••••")"
+                       disabled="@(!Interactive)" value="@Value" @onchange="OnChange" />
+                break;
+
+            default:
+                <input type="text" class="fr-input" placeholder="@(Field.Placeholder ?? "Enter text...")"
+                       disabled="@(!Interactive)" value="@Value" @onchange="OnChange" />
+                break;
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Field.HelpText) && Field.Type != FieldType.Paragraph)
+        {
+            <div class="fr-help">@Field.HelpText</div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public DesignerField Field { get; set; } = default!;
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public bool Interactive { get; set; } = true;
+
+    private string DisplayLabel => string.IsNullOrWhiteSpace(Field.Label) ? Field.Name : Field.Label;
+
+    private static readonly string[] SampleOptions = { "Option 1", "Option 2", "Option 3" };
+    private IEnumerable<string> EffectiveOptions =>
+        Field.Options.Count > 0 ? Field.Options : SampleOptions;
+
+    private Task OnChange(ChangeEventArgs e) => OnValue(e.Value?.ToString());
+    private Task OnCheckbox(ChangeEventArgs e) => OnValue(e.Value is true ? "true" : "false");
+
+    private async Task OnValue(string? value)
+    {
+        Value = value;
+        if (ValueChanged.HasDelegate) await ValueChanged.InvokeAsync(value);
+    }
+}

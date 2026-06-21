@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\FormBuilder.Application\FormBuilder.Application.csproj" />
+    <ProjectReference Include="..\FormBuilder.Infrastructure\FormBuilder.Infrastructure.csproj" />
+    <ProjectReference Include="..\FormBuilder.Domain\FormBuilder.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="9.5.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,21 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "formbuilder",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "src/FormBuilder.Web",
+        "--no-launch-profile",
+        "--urls",
+        "http://localhost:5080",
+        "--",
+        "--environment=Development",
+        "--ConnectionStrings:DefaultConnection=Server=(localdb)\\FormBuilderLocalDB;Database=FormBuilderDb;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True"
+      ],
+      "port": 5080
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+.runtime-wrap { padding: 40px 20px; min-height: calc(100vh - 60px); background: #EAEAEA; display: flex; justify-content: center; }
+.rt-card { background: #fff; border-radius: 20px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 40px; max-width: 680px; width: 100%; height: fit-content; }
+.rt-center { text-align: center; }
+.rt-title { font-size: 26px; font-weight: 700; color: #2A2A2A; margin-bottom: 6px; }
+.rt-desc { color: #5A5A5A; margin-bottom: 28px; }
+.rt-page { font-size: 16px; font-weight: 700; color: #2A2A2A; margin: 20px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #E5E7EB; }
+.rt-row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+.rt-col { min-width: 0; }
+.rt-actions { margin-top: 24px; }
+.rt-success-icon { width: 64px; height: 64px; border-radius: 50%; background: #CBEC00; color: #2A2A2A; font-size: 32px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+
+@media (max-width: 640px) {
+    .rt-row { grid-template-columns: 1fr; }
+    .rt-col { grid-column: span 1 !important; }
+    .rt-card { padding: 24px; }
+}

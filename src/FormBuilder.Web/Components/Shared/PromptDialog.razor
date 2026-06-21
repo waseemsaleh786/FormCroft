@@ -1,0 +1,32 @@
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_value" Label="@Label" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" AutoFocus="true" OnKeyDown="OnKeyDown" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" OnClick="Ok">@OkText</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string Label { get; set; } = "Name";
+    [Parameter] public string OkText { get; set; } = "OK";
+    [Parameter] public string? InitialValue { get; set; }
+
+    private string _value = string.Empty;
+
+    protected override void OnInitialized() => _value = InitialValue ?? string.Empty;
+
+    private void OnKeyDown(KeyboardEventArgs e) { if (e.Key == "Enter") Ok(); }
+
+    private void Ok()
+    {
+        if (!string.IsNullOrWhiteSpace(_value))
+            MudDialog.Close(DialogResult.Ok(_value.Trim()));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

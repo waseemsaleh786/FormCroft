@@ -1,0 +1,35 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="FormCraftTheme.Instance" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<nav class="main-nav">
+    <div class="main-nav-left">
+        <a class="logo" href="/">
+            <div class="logo-icon">F</div>
+            <span>FormCraft</span>
+        </a>
+        <ul class="main-menu">
+            <li><NavLink href="/dashboard">Dashboard</NavLink></li>
+            <li><NavLink href="/" Match="NavLinkMatch.All">Forms</NavLink></li>
+            <li><NavLink href="/submissions">Submissions</NavLink></li>
+            <li><NavLink href="/analytics">Analytics</NavLink></li>
+        </ul>
+    </div>
+    <div class="main-nav-right">
+        <MudIconButton Icon="@Icons.Material.Outlined.Notifications" Size="Size.Small" Color="Color.Inherit" />
+        <MudIconButton Icon="@Icons.Material.Outlined.HelpOutline" Size="Size.Small" Color="Color.Inherit" />
+        <div class="avatar" title="User Profile">JD</div>
+    </div>
+</nav>
+
+<main class="app-content">
+    @Body
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred. <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>

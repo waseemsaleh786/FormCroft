@@ -1,0 +1,171 @@
+@page "/"
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Forms — FormCraft</PageTitle>
+
+<div class="forms-page">
+    <div class="page-header">
+        <div class="header-left">
+            <div class="page-title">Forms</div>
+            <div class="page-subtitle">Manage and create your forms</div>
+        </div>
+        <div class="header-right">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+                Create Form
+            </MudButton>
+            <input class="search-box" placeholder="Search forms..." @bind="_search" @bind:event="oninput" />
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="state-block"><MudProgressCircular Color="Color.Primary" Indeterminate="true" /></div>
+    }
+    else if (Filtered.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <div class="empty-title">@(string.IsNullOrWhiteSpace(_search) ? "No forms yet" : "No forms match your search")</div>
+            <div class="empty-text">@(string.IsNullOrWhiteSpace(_search) ? "Create your first form to get started" : "Try a different search term")</div>
+        </div>
+    }
+    else
+    {
+        <div class="forms-grid">
+            @foreach (var form in Filtered)
+            {
+                <div class="form-card" @onclick="() => OpenDesigner(form.Id)">
+                    <div class="form-card-header">
+                        <div class="form-card-title">@form.Name</div>
+                        <div class="form-card-actions" @onclick:stopPropagation="true">
+                            <button class="form-card-btn" title="Edit" @onclick="() => OpenDesigner(form.Id)">✎</button>
+                            <button class="form-card-btn delete" title="Delete" @onclick="() => ConfirmDelete(form)">🗑</button>
+                        </div>
+                    </div>
+
+                    <div class="status-row">
+                        <span class="status-chip @StatusClass(form.Status)">@form.Status</span>
+                        @if (!string.IsNullOrWhiteSpace(form.Description))
+                        {
+                            <span class="form-card-desc">@form.Description</span>
+                        }
+                    </div>
+
+                    <div class="form-card-stats">
+                        <div class="form-stat">
+                            <div class="form-stat-label">Fields</div>
+                            <div class="form-stat-value">@form.FieldCount</div>
+                        </div>
+                        <div class="form-stat">
+                            <div class="form-stat-label">Pages</div>
+                            <div class="form-stat-value">@form.PageCount</div>
+                        </div>
+                        <div class="form-stat">
+                            <div class="form-stat-label">Subs</div>
+                            <div class="form-stat-value">@form.SubmissionCount</div>
+                        </div>
+                    </div>
+
+                    <div class="form-card-meta">Modified: @form.UpdatedAt.ToLocalTime().ToString("MMM d, yyyy")</div>
+
+                    <div class="form-card-footer" @onclick:stopPropagation="true">
+                        <div class="form-card-open" @onclick="() => OpenDesigner(form.Id)">Open Editor</div>
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Dense="true" Size="Size.Small" AnchorOrigin="Origin.BottomRight">
+                            <MudMenuItem Icon="@Icons.Material.Filled.AccountTree" OnClick="() => OpenMapping(form.Id)">Field Mapping</MudMenuItem>
+                            @if (form.Status != FormStatus.Published)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Publish" OnClick="() => Publish(form)">Publish</MudMenuItem>
+                            }
+                            else
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="() => ViewLive(form)">View Live</MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Filled.Archive" OnClick="() => Archive(form)">Archive</MudMenuItem>
+                            }
+                            <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="() => ConfirmDelete(form)">Delete</MudMenuItem>
+                        </MudMenu>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<FormSummaryDto> _forms = new();
+    private string _search = string.Empty;
+    private bool _loading = true;
+
+    private List<FormSummaryDto> Filtered =>
+        string.IsNullOrWhiteSpace(_search)
+            ? _forms
+            : _forms.Where(f => f.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await Sender.Send(new GetFormsQuery());
+        _forms = result.ToList();
+        _loading = false;
+    }
+
+    private static string StatusClass(FormStatus status) => status switch
+    {
+        FormStatus.Published => "published",
+        FormStatus.Archived => "archived",
+        _ => "draft"
+    };
+
+    private void OpenDesigner(Guid id) => Nav.NavigateTo($"/forms/{id}/designer");
+    private void OpenMapping(Guid id) => Nav.NavigateTo($"/forms/{id}/mapping");
+    private void ViewLive(FormSummaryDto form) => Nav.NavigateTo($"/f/{form.Slug}");
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<CreateFormDialog>("Create New Form");
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Guid newId })
+        {
+            Snackbar.Add("Form created", Severity.Success);
+            OpenDesigner(newId);
+        }
+    }
+
+    private async Task ConfirmDelete(FormSummaryDto form)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Title, "Delete Form" },
+            { x => x.Message, $"Are you sure you want to delete \"{form.Name}\"? This action cannot be undone." },
+            { x => x.ConfirmText, "Delete" },
+            { x => x.Danger, true }
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Delete Form", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await Sender.Send(new FormBuilder.Application.Features.Forms.Commands.DeleteFormCommand(form.Id));
+            Snackbar.Add($"Form \"{form.Name}\" deleted");
+            await LoadAsync();
+        }
+    }
+
+    private async Task Publish(FormSummaryDto form)
+    {
+        await Sender.Send(new FormBuilder.Application.Features.Forms.Commands.PublishFormCommand(form.Id));
+        Snackbar.Add($"\"{form.Name}\" published", Severity.Success);
+        await LoadAsync();
+    }
+
+    private async Task Archive(FormSummaryDto form)
+    {
+        await Sender.Send(new FormBuilder.Application.Features.Forms.Commands.ArchiveFormCommand(form.Id));
+        Snackbar.Add($"\"{form.Name}\" archived");
+        await LoadAsync();
+    }
+}

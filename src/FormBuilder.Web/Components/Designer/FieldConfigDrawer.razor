@@ -1,0 +1,91 @@
+@using FormBuilder.Web.Models.Designer
+
+<div class="drawer-backdrop" @onclick="OnClose"></div>
+<div class="drawer">
+    <div class="drawer-header">
+        <span class="drawer-title">Field Configuration</span>
+        <button class="drawer-close" @onclick="OnClose">✕</button>
+    </div>
+    <div class="drawer-tabs">
+        @foreach (var tab in Tabs)
+        {
+            var tb = tab;
+            <button class="drawer-tab @(_tab == tb ? "active" : "")" @onclick="() => _tab = tb">@tb</button>
+        }
+    </div>
+    <div class="drawer-body">
+        @if (_tab == "General")
+        {
+            <div class="cfg-group"><label>Label</label><input class="cfg-input" @bind="Field.Label" @bind:after="Changed" /></div>
+            <div class="cfg-group"><label>Field Name / ID</label><input class="cfg-input" @bind="Field.Name" @bind:after="Changed" /></div>
+            <div class="cfg-group"><label>Type</label><div class="cfg-readonly">@FieldCatalog.Info(Field.Type).Label</div></div>
+            <div class="cfg-group"><label>Placeholder</label><input class="cfg-input" @bind="Field.Placeholder" @bind:after="Changed" /></div>
+            <div class="cfg-group"><label>Help Text</label><textarea class="cfg-input" @bind="Field.HelpText" @bind:after="Changed"></textarea></div>
+            <div class="cfg-group"><label>Default Value</label><input class="cfg-input" @bind="Field.DefaultValue" @bind:after="Changed" /></div>
+            <div class="cfg-toggle"><span>Required</span><MudSwitch T="bool" @bind-Value="Field.Required" @bind-Value:after="Changed" Color="Color.Primary" /></div>
+            @if (Field.IsChoice)
+            {
+                <div class="cfg-group"><label>Options (one per line)</label>
+                    <textarea class="cfg-input" rows="4" value="@OptionsText" @onchange="OnOptionsChanged"></textarea></div>
+            }
+        }
+        else if (_tab == "Validation")
+        {
+            <div class="cfg-group"><label>Min Length</label><input type="number" class="cfg-input" @bind="Field.MinLength" @bind:after="Changed" /></div>
+            <div class="cfg-group"><label>Max Length</label><input type="number" class="cfg-input" @bind="Field.MaxLength" @bind:after="Changed" /></div>
+            <div class="cfg-group"><label>Pattern (Regex)</label><input class="cfg-input mono" @bind="Field.Pattern" @bind:after="Changed" /></div>
+            <div class="cfg-group"><label>Error Message</label><input class="cfg-input" @bind="Field.ErrorMessage" @bind:after="Changed" /></div>
+        }
+        else if (_tab == "Appearance")
+        {
+            <div class="cfg-toggle"><span>Hide Label</span><MudSwitch T="bool" @bind-Value="Field.HideLabel" @bind-Value:after="Changed" Color="Color.Primary" /></div>
+            <div class="cfg-group"><label>CSS Class</label><input class="cfg-input" @bind="Field.CssClass" @bind:after="Changed" /></div>
+            <div class="cfg-group"><label>Tooltip</label><input class="cfg-input" @bind="Field.Tooltip" @bind:after="Changed" /></div>
+        }
+        else
+        {
+            <div class="cfg-toggle"><span>Conditional Display</span><MudSwitch T="bool" @bind-Value="Field.ConditionalEnabled" @bind-Value:after="Changed" Color="Color.Primary" /></div>
+            <div class="cfg-group"><label>Depends On Field</label>
+                <select class="cfg-input" @bind="Field.DependsOnField" @bind:after="Changed">
+                    <option value="">— Select field —</option>
+                    @foreach (var other in OtherFieldNames)
+                    {
+                        <option value="@other">@other</option>
+                    }
+                </select></div>
+            <div class="cfg-group"><label>Operator</label>
+                <select class="cfg-input" @bind="Field.ConditionalOperator" @bind:after="Changed">
+                    @foreach (var op in Enum.GetValues<ConditionalOperator>())
+                    {
+                        <option value="@op">@op</option>
+                    }
+                </select></div>
+            <div class="cfg-group"><label>Value</label><input class="cfg-input" @bind="Field.ConditionalValue" @bind:after="Changed" /></div>
+        }
+    </div>
+    <div class="drawer-footer">
+        <button class="drawer-del" @onclick="OnDelete">Delete Field</button>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false" OnClick="OnClose">Done</MudButton>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DesignerField Field { get; set; } = default!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public IEnumerable<string> OtherFieldNames { get; set; } = Enumerable.Empty<string>();
+
+    private static readonly string[] Tabs = { "General", "Validation", "Appearance", "Logic" };
+    private string _tab = "General";
+
+    private Task Changed() => OnChanged.InvokeAsync();
+
+    private string OptionsText => string.Join('\n', Field.Options);
+    private async Task OnOptionsChanged(ChangeEventArgs e)
+    {
+        Field.Options = (e.Value?.ToString() ?? "")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        await Changed();
+    }
+}

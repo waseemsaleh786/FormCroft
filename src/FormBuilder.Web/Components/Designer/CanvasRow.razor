@@ -1,0 +1,100 @@
+@using FormBuilder.Web.Models.Designer
+@using FormBuilder.Web.Services
+@inject CanvasStateService Canvas
+@inject DragDropStateService Drag
+
+@if (Preview)
+{
+    <div class="@(Depth == 0 ? "canvas-row preview" : "sub-row preview")">
+        <div class="canvas-row-grid">
+            @foreach (var column in Row.Columns)
+            {
+                <div class="col-cell preview" style="grid-column: span @column.Width;">
+                    @foreach (var field in column.Fields)
+                    {
+                        <FieldRenderer Field="field" Interactive="true" />
+                    }
+                    @foreach (var sub in column.SubRows)
+                    {
+                        <CanvasRow Row="sub" ParentRows="column.SubRows" RowIndex="column.SubRows.IndexOf(sub)" Depth="Depth + 1" Preview="true" />
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="@(Depth == 0 ? "canvas-row" : "sub-row")">
+        <div class="@(Depth == 0 ? "canvas-row-actions" : "sub-row-actions")">
+            @if (Depth == 0)
+            {
+                <button class="row-action-btn move" title="Drag to reorder row" draggable="true"
+                        @ondragstart="() => Drag.Start(new RowMoveDrag(Row, ParentRows))"
+                        @ondragend="() => Drag.End()">↕</button>
+            }
+            <button class="row-action-btn delete" title="Delete row" @onclick="() => Canvas.DeleteRow(ParentRows, Row)">🗑</button>
+        </div>
+
+        <div class="canvas-row-grid">
+            @foreach (var col in Row.Columns)
+            {
+                var column = col;
+                var targetId = column.Id.ToString();
+                var over = Drag.OverTargetId == targetId;
+                <div class="col-cell @(column.IsEmpty ? "" : "filled") @(over ? "drag-over" : "") @(Canvas.LayoutMode ? "layout-target" : "")"
+                     style="grid-column: span @column.Width;"
+                     @ondragenter:preventDefault="true" @ondragenter="() => Drag.SetOver(targetId)"
+                     @ondragleave="() => Drag.ClearOver(targetId)"
+                     @ondragover:preventDefault="true"
+                     @ondrop:preventDefault="true" @ondrop="() => Canvas.DropOnColumn(column, ParentRows, RowIndex)">
+
+                    @if (column.IsEmpty)
+                    {
+                        <div class="col-placeholder-icon">+</div>
+                        <div class="col-placeholder-text">@(Canvas.LayoutMode ? "Drop layout here" : "Drop field here")</div>
+                    }
+
+                    @foreach (var field in column.Fields)
+                    {
+                        var f = field;
+                        <div class="canvas-field @(Canvas.Selected == f ? "selected" : "") @(Canvas.LayoutMode ? "dimmed" : "")"
+                             draggable="@(!Canvas.LayoutMode)"
+                             @onclick="() => Canvas.Select(f)"
+                             @ondragstart="() => Drag.Start(new MoveFieldDrag(f, column))"
+                             @ondragend="() => Drag.End()">
+                            <div class="canvas-field-bar">
+                                <span class="canvas-field-drag">⋮⋮</span>
+                                <span class="canvas-field-label">@(string.IsNullOrWhiteSpace(f.Label) ? f.Name : f.Label)</span>
+                                <span class="canvas-field-type">@FieldCatalog.Info(f.Type).Label</span>
+                                @if (!Canvas.LayoutMode)
+                                {
+                                    <span class="canvas-field-actions" @onclick:stopPropagation="true">
+                                        <button class="field-action-btn" title="Configure" @onclick="() => Canvas.Select(f)">⚙</button>
+                                        <button class="field-action-btn delete" title="Delete" @onclick="() => Canvas.DeleteField(column, f)">🗑</button>
+                                    </span>
+                                }
+                            </div>
+                            <div class="canvas-field-preview">
+                                <FieldRenderer Field="f" Interactive="false" />
+                            </div>
+                        </div>
+                    }
+
+                    @foreach (var sub in column.SubRows)
+                    {
+                        <CanvasRow Row="sub" ParentRows="column.SubRows" RowIndex="column.SubRows.IndexOf(sub)" Depth="Depth + 1" />
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public DesignerRow Row { get; set; } = default!;
+    [Parameter, EditorRequired] public List<DesignerRow> ParentRows { get; set; } = default!;
+    [Parameter] public int RowIndex { get; set; }
+    [Parameter] public int Depth { get; set; }
+    [Parameter] public bool Preview { get; set; }
+}

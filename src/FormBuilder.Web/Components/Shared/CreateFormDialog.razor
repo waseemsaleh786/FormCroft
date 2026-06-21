@@ -1,0 +1,55 @@
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4" Style="color:#5A5A5A">Enter a name for your new form</MudText>
+        <MudTextField @bind-Value="_name" Label="Form Name" Placeholder="e.g., Contact Form"
+                      Variant="Variant.Outlined" Immediate="true" Margin="Margin.Dense"
+                      OnKeyDown="OnKeyDown" AutoFocus="true" Class="mb-3" />
+        <MudTextField @bind-Value="_description" Label="Description (optional)" Variant="Variant.Outlined"
+                      Lines="2" Margin="Margin.Dense" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" DropShadow="false"
+                   Disabled="_busy" OnClick="Create">Create</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private string _name = string.Empty;
+    private string? _description;
+    private bool _busy;
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Create();
+    }
+
+    private async Task Create()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            Snackbar.Add("Please enter a form name", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var id = await Sender.Send(
+                new FormBuilder.Application.Features.Forms.Commands.CreateFormCommand(_name.Trim(), _description));
+            MudDialog.Close(DialogResult.Ok(id));
+        }
+        catch (Exception ex)
+        {
+            _busy = false;
+            Snackbar.Add($"Could not create form: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}
